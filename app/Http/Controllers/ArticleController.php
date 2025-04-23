@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Events\ArticlePublished;
 use App\Models\Article;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
@@ -10,7 +11,7 @@ class ArticleController extends Controller
 {
     public function index()
     {
-        $articles = Article::all();
+        $articles = Article::paginate(3);
         return view('articles.index', compact('articles'));
     }
 
@@ -26,7 +27,8 @@ class ArticleController extends Controller
             'content' => 'required',
         ]);
 
-        Article::create($request->only('title', 'content'));
+        $article = Article::create($request->only('title', 'content'));
+        event(new ArticlePublished($article));
 
         return redirect()->route('article.index')->with('success', 'Article created successfully.');
     }
@@ -44,6 +46,7 @@ class ArticleController extends Controller
     
         return view('articles.show', [
             'article' => $cachedArticle,
+            'viewCount' => Cache::get($viewCacheKey)
         ]);
     }
 
@@ -60,6 +63,9 @@ class ArticleController extends Controller
         ]);
 
         $article->update($request->only('title', 'content'));
+
+        $key = "article:{$article->id}:views";
+        Cache::forget($key);
 
         return redirect()->route('article.index')->with('success', 'Article updated successfully.');
     }

@@ -13,11 +13,13 @@ class EnsureArticleAccess
 
         if ($article->is_premium) {
             $user = auth()->user();
-            if (!app(AccessService::class)->canAccessArticle($user)) {
+            $accessService = app(AccessService::class);
+
+            if (!$accessService->canAccessArticle($user, $article->id)) {
                 abort(403, 'Access limit reached');
             }
 
-            app(AccessService::class)->recordAccess($user);
+            $accessService->recordAccess($user, $article->id);
         }
 
         return $next($request);

@@ -1,44 +1,56 @@
 <?php
 namespace App\Services;
 
+use App\Models\AccessLog;
 use App\Models\User;
 use Illuminate\Support\Facades\Cache;
 
 class AccessService 
 {
-    protected function accessCountKey(User $user): string
-    {
-        return "user:{$user->id}:access_count:" . now()->toDateString();
-    }
-
     protected function subscriptionKey(User $user): string
     {
         return "user:{$user->id}:subscription";
     }
 
-    public function canAccessArticle(User $user): bool
+    public function canAccessArticle(User $user, int $articleId): bool
     {
-        $cacheKey = $this->accessCountKey($user);
-
         $subscription = Cache::remember($this->subscriptionKey($user), 3600, function () use ($user) {
             return $user->subscription()->with('plan')->first();
         });
 
         if (!$subscription || !$subscription->plan) return false;
 
-        $accessCount = Cache::get($cacheKey, 0);     
+        $key = $this->articleAccessSetKey($user);
 
-        return $accessCount < $subscription->plan->daily_limit;
+        $accessedArticleIds = Cache::get($key, []);
+        
+        return in_array($articleId, $accessedArticleIds) &&
+            count($accessedArticleIds) >= $subscription->plan->daily_limit;
     }
 
-    public function recordAccess(User $user): void
+    public function recordAccess(User $user, int $articleId): void
     {
-        $cacheKey = $this->accessCountKey($user);
+        $key = $this->articleAccessSetKey($user);
 
-        if (!Cache::has($cacheKey)) {
-            Cache::put($cacheKey, 1, now()->endOfDay());
-        } else {
-            Cache::increment($cacheKey);
+        $articles = Cache::get($key, []);
+        if (!in_array($articleId, $articles)) {
+            $articles[] = $articleId;
+            Cache::put($key, $articles, now()->endOfDay());
+
+            $this->storeAccessLog($articleId);
         }
+    }
+
+    protected function storeAccessLog(int $articleId)
+    {
+        AccessLog::create([
+            'article_id' => $articleId,
+            'user_id' => auth()->user()->id
+        ]);
+    }
+
+    protected function articleAccessSetKey(User $user): string
+    {
+        return "user:{$user->id}:accessed_articles:" . now()->toDateString();
     }
 }
